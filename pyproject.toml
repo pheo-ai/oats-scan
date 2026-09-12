@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oats-scan"
+version = "0.1.0"
+description = "See what the agent skills on your machine tell an AI agent to run"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{name = "Pheo", email = "hello@pheo.ai"}]
+keywords = ["ai", "agents", "agent-skills", "security", "governance", "claude", "cursor"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://pheo.ai"
+Source = "https://github.com/pheo-ai/oats-scan"
+Issues = "https://github.com/pheo-ai/oats-scan/issues"
+
+[project.scripts]
+oats-scan = "oats_scan.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+oats_scan = ["_bin/*", "_bin/*/*", "data/*.json"]
