@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oats-scan"
-version = "0.1.0"
+version = "0.1.1"
 description = "See what the agent skills on your machine tell an AI agent to run"
 readme = "README.md"
 requires-python = ">=3.9"
