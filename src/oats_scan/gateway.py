@@ -57,7 +57,11 @@ def binary_path(name):
     candidates.append(BIN / filename)
     for candidate in candidates:
         if candidate.is_file():
-            if os.name != "nt":
+            # Only when it cannot already run: chmod needs ownership, and a
+            # service running as a non-root user over root-owned packages
+            # (the hardened container pheo-context ships) gets EPERM here
+            # and boots with no classifier.
+            if os.name != "nt" and not os.access(candidate, os.X_OK):
                 candidate.chmod(candidate.stat().st_mode | 0o111)
             return candidate
     have = sorted(p.name for p in BIN.iterdir() if p.is_dir()) if BIN.is_dir() else []
