@@ -23,6 +23,10 @@ from pathlib import Path
 
 BIN = Path(__file__).resolve().parent / "_bin"
 
+# How the hook says a ruling it gives Claude Code no decision for (Watch)
+# on stderr: oatsctl hook pre-tool-use prints {} and this line.
+WATCH_PREFIX = "OATS Watch: "
+
 
 class ScanError(Exception):
     """Something the person running this can act on."""
@@ -210,8 +214,20 @@ class Resolver(object):
                 ),
                 capture_output=True, text=True, timeout=60,
             )
-            payload = json.loads(proc.stdout.strip().splitlines()[-1])
-            reason = payload["hookSpecificOutput"]["permissionDecisionReason"]
+            lines = proc.stdout.strip().splitlines()
+            payload = json.loads(lines[-1]) if lines else {}
+            reason = (payload.get("hookSpecificOutput") or {}).get(
+                "permissionDecisionReason")
+            if not reason:
+                # The scan's room is in Watch, where the hook gives Claude
+                # Code no decision ({}) and says the ruling on stderr instead.
+                reason = next(
+                    (line[len(WATCH_PREFIX):] for line in proc.stderr.splitlines()
+                     if line.startswith(WATCH_PREFIX)),
+                    None,
+                )
+            if not reason:
+                return None
         except Exception:
             return None
         label = reason.split(" to ")[0].split(" at ")[0].strip()
