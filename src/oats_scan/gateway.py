@@ -1,16 +1,25 @@
 """Start a throwaway resolver, ask it questions, shut it down.
 
-The classifier runs as a local process and answers over HTTP on the
-loopback interface. Nothing here reaches the network, and the database it
-writes to is a temporary file that is deleted when the scan finishes, so a
-scan never touches state you rely on.
+`Resolver` is for callers that classify one command at a time over a long
+life, as the Pheo space does:
 
-Everything in this module is standard library. `oats-scan` has no
-dependencies at all.
+    resolver = Resolver()
+    resolver.__enter__()                  # or: with Resolver() as resolver:
+    key = resolver.classify("rm -rf ./build", label_to_key)
+    resolver.close()
+
+The classifier runs as a local process and answers over HTTP on the
+loopback interface. Nothing here reaches the network, and everything it
+writes (its database, its working directory, the files the hook keeps)
+goes into a temporary directory removed on close, so it never touches
+state you rely on.
+
+The binaries are the ones pheo-oats ships, and a command is classified by
+pheo-oats' own `classify`, so the space, `oats scan` and `oats-scan` read
+every command the same way.
 """
 import json
 import os
-import platform
 import secrets
 import shutil
 import socket
@@ -21,40 +30,31 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-BIN = Path(__file__).resolve().parent / "_bin"
-
 
 class ScanError(Exception):
     """Something the person running this can act on."""
 
 
-def platform_slug():
-    """Which bundled build belongs to this machine.
+def pheo_oats_bin():
+    """Where pheo-oats keeps the classifier binaries for this platform."""
+    import pheo_oats
 
-    macOS ships one universal binary covering Apple Silicon and Intel, so
-    the architecture is not part of its directory name.
-    """
-    system = platform.system()
-    machine = platform.machine().lower()
-    if system == "Darwin":
-        return "darwin-universal"
-    if system == "Linux":
-        return "linux-aarch64" if machine in ("aarch64", "arm64") else "linux-x86_64"
-    if system == "Windows":
-        return "windows-x86_64"
-    return "{}-{}".format(system.lower(), machine)
+    return Path(pheo_oats.__file__).resolve().parent / "_bin"
 
 
 def binary_path(name):
-    """The bundled binary for this platform."""
+    """The classifier binary: from OATS_SCAN_BIN_DIR or PHEO_OATS_BIN_DIR
+    when set, otherwise the one pheo-oats installed."""
     filename = name + (".exe" if os.name == "nt" else "")
-    override = os.environ.get("OATS_SCAN_BIN_DIR")
     candidates = []
-    if override:
-        candidates.append(Path(override) / filename)
-    candidates.append(BIN / platform_slug() / filename)
-    # A checkout built for a single platform keeps the binaries flat.
-    candidates.append(BIN / filename)
+    for variable in ("OATS_SCAN_BIN_DIR", "PHEO_OATS_BIN_DIR"):
+        override = os.environ.get(variable)
+        if override:
+            candidates.append(Path(override) / filename)
+    try:
+        candidates.append(pheo_oats_bin() / filename)
+    except ImportError:
+        pass
     for candidate in candidates:
         if candidate.is_file():
             # Only when it cannot already run: chmod needs ownership, and a
@@ -62,20 +62,38 @@ def binary_path(name):
             # (the hardened container pheo-context ships) gets EPERM here
             # and boots with no classifier.
             if os.name != "nt" and not os.access(candidate, os.X_OK):
-                candidate.chmod(candidate.stat().st_mode | 0o111)
+                try:
+                    candidate.chmod(candidate.stat().st_mode | 0o111)
+                except OSError:
+                    pass
             return candidate
-    have = sorted(p.name for p in BIN.iterdir() if p.is_dir()) if BIN.is_dir() else []
     raise ScanError(
-        "No classifier build for this machine.\n"
+        "No classifier for this machine: {} is not where pheo-oats keeps it.\n"
         "\n"
-        "  your platform:  {} {}  (looking for '{}')\n"
-        "  this copy has:  {}\n"
-        "\n"
-        "The classifier is compiled, so it ships one build per platform.\n"
-        "See https://github.com/pheo-ai/oats-scan#install".format(
-            platform.system(), platform.machine(), platform_slug(),
-            ", ".join(have) or "no builds at all")
+        "The classifier ships compiled inside pheo-oats, one build per\n"
+        "platform. Install pheo-oats for this platform (pip install --upgrade\n"
+        "oats-scan pulls it in), or point OATS_SCAN_BIN_DIR at a directory\n"
+        "holding pheo-action-gateway and oatsctl.".format(filename)
     )
+
+
+def require_pheo_oats():
+    """Fail at start, not one command at a time.
+
+    classify() asks pheo-oats' `classify`, which takes the hook's home
+    directory from 0.7.1. Against an older pheo-oats every question would
+    fail and read as "no answer" for the life of the resolver; better to
+    refuse to start and say which version is needed.
+    """
+    import inspect
+
+    try:
+        from pheo_oats.scan import classify
+    except ImportError as error:
+        raise ScanError("oats-scan needs pheo-oats 0.7.1 or newer ({}).".format(error)) from None
+    if "home" not in inspect.signature(classify).parameters:
+        raise ScanError("oats-scan needs pheo-oats 0.7.1 or newer: "
+                        "pip install --upgrade pheo-oats")
 
 
 def free_port():
@@ -103,10 +121,11 @@ def ready(gateway):
 
 
 class Resolver(object):
-    """A local classifier process, running only for the length of a scan.
+    """A local classifier process, running for as long as it is used.
 
-    Used as a context manager. On exit the process is terminated and the
-    temporary database removed, including on an exception or a Ctrl-C.
+    Used as a context manager, or with __enter__() and close(). On exit the
+    process is terminated and its temporary directory removed, including on
+    an exception or a Ctrl-C.
     """
 
     def __init__(self, cwd=None):
@@ -124,11 +143,8 @@ class Resolver(object):
         self.room = None
 
     def __enter__(self):
-        handle = tempfile.NamedTemporaryFile(
-            prefix="oats-scan-", suffix=".db", delete=False
-        )
-        handle.close()
-        self.database = handle.name
+        require_pheo_oats()
+        self.database = os.path.join(self.workdir, "resolver.db")
 
         environment = os.environ.copy()
         environment.update({
@@ -162,23 +178,20 @@ class Resolver(object):
             # act on, so say what actually went wrong.
             self.close()
             raise ScanError(
-                "The bundled classifier will not run on this machine.\n"
+                "The classifier will not run on this machine ({}).\n"
                 "\n"
-                "  your platform:  {} {}\n"
-                "  error:          {}\n"
-                "\n"
-                "This install was built for a different operating system or "
-                "architecture.\n"
-                "See https://github.com/pheo-ai/oats-scan#install".format(
-                    platform.system(), platform.machine(), error)
+                "This pheo-oats install was built for a different operating "
+                "system or architecture. Install pheo-oats for this "
+                "platform.".format(error)
             ) from None
 
         deadline = time.time() + 30
         while time.time() < deadline:
             if self.process.poll() is not None:
+                code = self.process.returncode
+                self.close()
                 raise ScanError(
-                    "The classifier exited during startup (code {}).".format(
-                        self.process.returncode)
+                    "The classifier exited during startup (code {}).".format(code)
                 )
             if ready(self.url):
                 break
@@ -199,23 +212,19 @@ class Resolver(object):
 
         None means the resolver did not answer, which the caller counts
         separately. A question that failed is not an answer of "harmless".
+
+        The question goes through the agent hook, exactly as `oats scan`
+        asks it; the hook's own small files go into this resolver's
+        temporary directory rather than the home directory.
         """
+        from pheo_oats.scan import classify
+
         try:
-            proc = subprocess.run(
-                [str(binary_path("oatsctl")), "hook", "pre-tool-use",
-                 "--gateway", self.url, "--project", self.room,
-                 "--repo", "local/scan", "--agent-id", "scan"],
-                input=json.dumps(
-                    {"tool_name": "Bash", "tool_input": {"command": command}}
-                ),
-                capture_output=True, text=True, timeout=60,
-            )
-            payload = json.loads(proc.stdout.strip().splitlines()[-1])
-            reason = payload["hookSpecificOutput"]["permissionDecisionReason"]
-        except Exception:
+            oatsctl = str(binary_path("oatsctl"))
+        except ScanError:
             return None
-        label = reason.split(" to ")[0].split(" at ")[0].strip()
-        return label_to_key.get(label)
+        return classify(oatsctl, self.url, self.room, command, label_to_key,
+                        home=self.workdir)
 
     def close(self):
         if self.process is not None and self.process.poll() is None:
@@ -224,13 +233,7 @@ class Resolver(object):
                 self.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.process.kill()
-        if self.database:
-            for suffix in ("", "-wal", "-shm"):
-                try:
-                    os.unlink(self.database + suffix)
-                except OSError:
-                    pass
-            self.database = None
+        self.database = None
         if getattr(self, "workdir", None):
             shutil.rmtree(self.workdir, ignore_errors=True)
             self.workdir = None

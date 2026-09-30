@@ -5,7 +5,3 @@ dist/
 *.egg-info/
 .venv/
 .pheo-gateway/
-
-# Filled in at build time, never committed.
-src/oats_scan/_bin/*
-!src/oats_scan/_bin/README.md

@@ -22,13 +22,12 @@ SOFTWARE.
 
 ---
 
-NOTE ON THE BUNDLED BINARIES
+NOTE ON THE CLASSIFIER
 
 The MIT licence above covers the Python source in this repository.
 
-The compiled binaries distributed in the published wheels, under
-src/oats_scan/_bin/, are proprietary software of Pheo Inc. They are
-redistributable as part of an unmodified oats-scan wheel and may be used to
-run this tool. They are not open source, and may not be reverse engineered,
-decompiled, disassembled, or separated from this package for use in another
-product.
+Since version 0.2.0, oats-scan bundles no binaries. The compiled classifier
+it runs is part of pheo-oats, which oats-scan installs as a dependency;
+pheo-oats is proprietary software of Pheo Inc., distributed under its own
+terms. Versions before 0.2.0 bundled the same classifier under
+src/oats_scan/_bin/, under the terms stated in those versions.

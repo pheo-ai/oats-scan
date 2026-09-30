@@ -10,6 +10,12 @@ oats-scan
 Thirty seconds. No account, no sign up, no configuration, and nothing leaves
 your machine.
 
+**oats-scan is now the same scanner as `oats scan` in
+[pheo-oats](https://pypi.org/project/pheo-oats/).** `pip install oats-scan`
+installs pheo-oats, and `oats-scan` runs `oats scan` with the flags, defaults
+and exit codes it always had, so the two print the same numbers. If you
+already use pheo-oats, `oats scan` is all you need.
+
 ## You already installed these
 
 Agent skills are markdown files that tell an AI what commands to run on your
@@ -18,28 +24,28 @@ on a recommendation, without reading them.
 
 Your agent reads them. You usually don't.
 
-`oats-scan` reads them for you. Here is a real run on a working laptop:
+`oats-scan` reads them for you. On a working laptop it found 1,528 commands
+in 4,331 files, and 19 of them in classes that can never run unattended.
+Nineteen. In plugins from well known vendors, all of them legitimate. Here is
+what a run looks like, on a single skill file:
 
 ```
-  Scanning 3 installed skill locations and my-project
+  Scanning /home/you/skills
 
-  4331 files, 1528 command blocks. Classifying ...
+  1 files, 5 shell blocks. Classifying ...
 
   What these instruct an agent to do
 
-    Destructive command              4   always needs a person
-    Remote code execution           13   always needs a person
-    Credential access                2   always needs a person
-    Shell command                 1506
-    Read                             3
+    Remote code execution             1   never graduates
+    Credential access                 1   never graduates
+    Shell command                     3
 
-  19 of 1528 actions, in 3 classes, can never run unattended.
-  Those are the ones worth your attention.
+  2 of 5 actions, in 2 classes, can never run unattended.
+  Those are the ones a person has to approve, every time.
 ```
 
-Nineteen. In plugins from well known vendors, all of them legitimate. One is
-this line, sitting in an installed skill, waiting for the agent to decide to
-run it:
+One of the laptop's nineteen is this line, sitting in an installed skill,
+waiting for the agent to decide to run it:
 
 ```bash
 curl -fsSL https://downloads.cursor.com/origin/install.sh | sh
@@ -57,33 +63,26 @@ oats-scan --files      # which skill each one came from
 pip install oats-scan
 ```
 
-Python 3.9 or newer. No other dependencies: `pip list` will show `oats-scan`
-and nothing else.
+Python 3.9 or newer. oats-scan itself is pure Python; it installs pheo-oats,
+which carries the compiled classifier.
 
-**Platform support.** The classifier is compiled, so each platform has its own
-wheel and `pip` downloads only yours.
+**Platform support** is pheo-oats': wheels for macOS (Apple silicon and
+Intel), Linux x86-64, Linux aarch64 and Windows x86-64, and `pip` downloads
+only yours.
 
-| Platform | Wheel |
-|---|---|
-| macOS, Apple Silicon and Intel | universal |
-| Linux x86-64 | yes |
-| Linux aarch64 | yes |
-| Windows x86-64 | yes |
-
-**Working from source.** This repository holds the Python and the tests; the
-compiled classifier is not committed, which is why a clone is small and fast.
-To run against a source checkout, install the package for the binaries and put
-the checkout ahead of it:
+**Working from source.** This repository holds the Python and the tests. To run
+a source checkout, install pheo-oats for the classifier and put the checkout
+ahead of it:
 
 ```bash
 git clone https://github.com/pheo-ai/oats-scan
 cd oats-scan
-pip install oats-scan
+pip install pheo-oats
 PYTHONPATH=src python3 -m oats_scan --files
 ```
 
-Or point `OATS_SCAN_BIN_DIR` at a directory holding `pheo-action-gateway` and
-`oatsctl`.
+Or point `OATS_SCAN_BIN_DIR` at a directory holding `pheo-action-gateway`,
+`oatsctl` and `pheo-mcp-github`.
 
 ## What it looks at
 
@@ -101,10 +100,10 @@ oats-scan --strict               # exit 1 if anything needs review, for CI
 
 ## How it decides
 
-Every command is sorted into one of 33 **consequence classes**, each carrying a
-severity from 0 to 100. Classes at or above 75 are the ones that can never
-become routine, however well an agent has behaved. Those are what
-`always needs a person` marks.
+Every command is sorted into a **consequence class**, each carrying a severity
+from 0 to 100. Classes at or above 75 are the ones that can never become
+routine, however well an agent has behaved. Those are what `never graduates`
+marks.
 
 Some things you can take back:
 
@@ -123,8 +122,9 @@ reads the command string and nothing else, so the same command produces the
 same class today, next year, and on your machine. Any result can be re-derived
 without re-running anything.
 
-The full list of 33 classes ships with the package as
-`oats_scan/data/action-classes.json`.
+The full list of classes ships with pheo-oats as
+`pheo_oats/data/action-classes.json`, the same list the Pheo space and the
+OATS gateway rule with.
 
 ## What it tells you, and what it leaves to you
 
@@ -182,12 +182,12 @@ agent skills, and the classification of all of them is published as
 
 Once you can see what your agent is told to do, the next question is usually
 whether something can hold an action while you look at it. That is
-[Pheo OATS](https://pheo.ai), which is the gateway this classifier normally
-lives in. `oats-scan` is the view. The gateway is the brake. Start with the
-view.
+[Pheo OATS](https://pheo.ai), the gateway this classifier normally lives in,
+and it is already installed: `oats quickstart claude` starts it. `oats-scan` is
+the view. The gateway is the brake. Start with the view.
 
 ## Licence
 
-The Python source in this repository is MIT. The compiled classifier bundled in
-the published wheels is proprietary software of Pheo Inc., redistributable as
-part of an unmodified `oats-scan` wheel. See [LICENSE](LICENSE).
+The Python source in this repository is MIT. The compiled classifier is part of
+pheo-oats, proprietary software of Pheo Inc. installed as a dependency under
+its own terms. See [LICENSE](LICENSE).
