@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oats-scan"
-version = "0.1.1"
-description = "See what the agent skills on your machine tell an AI agent to run"
+version = "0.2.0"
+description = "See what the agent skills on your machine tell an AI agent to run (the `oats scan` of pheo-oats)"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{name = "Pheo", email = "hello@pheo.ai"}]
@@ -18,7 +18,9 @@ classifiers = [
   "Topic :: Security",
   "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = []
+# The scanner and its classifier are pheo-oats'. 0.7.1 is the first that
+# does everything oats-scan did (see pheo-oats' CHANGELOG).
+dependencies = ["pheo-oats>=0.7.1"]
 
 [project.urls]
 Homepage = "https://pheo.ai"
@@ -33,6 +35,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-oats_scan = ["_bin/*", "_bin/*/*", "data/*.json"]
